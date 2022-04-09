@@ -1,0 +1,7 @@
+*app_worms/
+*libgpiod-example/
+*raspberry-pi-c-morse-code/
+
+gpiod.h
+main.o
+main
