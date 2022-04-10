@@ -141,12 +141,13 @@ int main(int argc, char **argv)
             goto release_line;
         }
 
+        lastTime = event.ts; // keep record of when initial event occurred to calculate duration
+
         /* informative code */
-        // lastTime = event.ts;         
         // printf("\n");
         // printf("INITIAL event notification on line #%u %d times\n", line_num, i);
         // printf("Event type: %d\n", event.event_type);
-        // printf("Event time: %lo sec %lo nsec\n", lastTime.tv_sec, lastTime.tv_nsec);
+        // printf("Event time: %lo sec %lo nsec\n", event.ts.tv_sec, event.ts.tv_nsec);
         // printf("\n");
         
         // debouncing loop - wait for bounce events to end
@@ -158,7 +159,7 @@ int main(int argc, char **argv)
                 ret = -1;
                 goto release_line;
             }
-            else if (ret == 0) // bouncing ended - exit loop
+            else if (ret == 0) // timeout, i.e. bouncing ended - exit loop
             {
                 break;
             }
@@ -170,13 +171,12 @@ int main(int argc, char **argv)
                 goto release_line;
             }
 
-            lastTime = event.ts;
             
-            /* informative code */
+            /* informative code */            
             //printf("\n");
             //printf("BOUNCE event notification on line #%u %d times\n", line_num, i);
             //printf("Event type: %d\n", event.event_type);
-            //printf("Event time: %lo sec %lo nsec\n", lastTime.tv_sec, lastTime.tv_nsec);
+            //printf("Event time: %lo sec %lo nsec\n", event.ts.tv_sec, event.ts.tv_nsec);
             //printf("\n");
         }
 
