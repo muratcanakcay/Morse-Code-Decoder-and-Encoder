@@ -103,11 +103,11 @@ int main(int argc, char **argv)
         ret = gpiod_line_event_read(line, &event);
         lastTime = event.ts;
                 
-        printf("\n");
-        printf("Get event notification on line #%u %d times\n", line_num, i);
-        printf("Event type: %d\n", event.event_type);
-        printf("Event time: %lo sec %lo nsec\n", lastTime.tv_sec, event.ts.tv_nsec);
-        printf("\n");
+        // printf("\n");
+        // printf("Get event notification on line #%u %d times\n", line_num, i);
+        // printf("Event type: %d\n", event.event_type);
+        // printf("Event time: %lo sec %lo nsec\n", lastTime.tv_sec, event.ts.tv_nsec);
+        // printf("\n");
 
         if (ret < 0) {
             perror("Read last event notification failed\n");
@@ -153,8 +153,8 @@ int main(int argc, char **argv)
             msleep(50);
         }
 
-        printf("PREV Input %d on line #%u\n", prevVal, line_num);
-        printf("FINAL Input %d on line #%u\n", newVal, line_num);
+        // printf("PREV Input %d on line #%u\n", prevVal, line_num);
+        // printf("FINAL Input %d on line #%u\n", newVal, line_num);
 
         //process input
         // if (firstLetter || (newVal == 0 & prevVal == 0))
@@ -163,6 +163,9 @@ int main(int argc, char **argv)
         //     continue;
         // }
 
+        int duration = (int)((lastTime.tv_sec - prevTime.tv_sec) * 1000 + (lastTime.tv_nsec - prevTime.tv_nsec) / 1000000); 
+        printf("%d -> %dms -> %d", prevVal, duration, newVal);
+        printf("\n");
 
         if (newVal == 1 && prevVal == 0)
         {
@@ -177,9 +180,9 @@ int main(int argc, char **argv)
             // }
             
             // not firstLetter, so calculate duration
-            int duration = (int)((lastTime.tv_sec - prevTime.tv_sec) * 1000 + (lastTime.tv_nsec - prevTime.tv_nsec) / 1000000); 
-            printf("duration: %dms", duration);
-            printf("\n");
+            // int duration = (int)((lastTime.tv_sec - prevTime.tv_sec) * 1000 + (lastTime.tv_nsec - prevTime.tv_nsec) / 1000000); 
+            // printf("duration: %dms", duration);
+            // printf("\n");
 
             prevVal = 1;
             prevTime = lastTime;            
@@ -187,9 +190,9 @@ int main(int argc, char **argv)
 
         if (newVal == 0 && prevVal == 1)
         {
-            int duration = (int)((lastTime.tv_sec - prevTime.tv_sec) * 1000 + (lastTime.tv_nsec - prevTime.tv_nsec) / 1000000); 
-            printf("duration: %dms", duration);
-            printf("\n");
+            // int duration = (int)((lastTime.tv_sec - prevTime.tv_sec) * 1000 + (lastTime.tv_nsec - prevTime.tv_nsec) / 1000000); 
+            // printf("duration: %dms", duration);
+            // printf("\n");
 
             prevVal = 0;
             prevTime = lastTime;            
