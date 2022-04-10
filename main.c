@@ -11,7 +11,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <string.h>
-#include <limits.h>
+#include <limitimeout.h>
 
 #ifndef	CONSUMER
 #define	CONSUMER	"Consumer"
@@ -36,7 +36,7 @@ int main(int argc, char **argv)
 {
 	char *chipname = "gpiochip0";
 	unsigned int line_num = 13;	// GPIO Pin #13
-	struct timespec ts = { 10, 0 };
+	struct timespec timeout = { 10, 0 };
 	struct gpiod_line_event event;
 	struct gpiod_chip *chip;
 	struct gpiod_line *line;
@@ -67,8 +67,8 @@ int main(int argc, char **argv)
     {
         i++;
         
-        // request events
-        ret = gpiod_line_request_both_edges_events(line, CONSUMER);
+        // request eventimeout
+        ret = gpiod_line_request_both_edges_eventimeout(line, CONSUMER);
 	    if (ret < 0) 
         {
 		    perror("Request event notification failed\n");
@@ -77,7 +77,7 @@ int main(int argc, char **argv)
         }
 
         // wait for event
-        ret = gpiod_line_event_wait(line, &ts);
+        ret = gpiod_line_event_wait(line, &timeout);
 		if (ret < 0) 
         {
             perror("Wait event notification failed\n");
@@ -101,12 +101,12 @@ int main(int argc, char **argv)
         }
 
         ret = gpiod_line_event_read(line, &event);
-        lastTime = event.ts;
+        lastTime = event.timeout;
                 
         // printf("\n");
         // printf("Get event notification on line #%u %d times\n", line_num, i);
         // printf("Event type: %d\n", event.event_type);
-        // printf("Event time: %lo sec %lo nsec\n", lastTime.tv_sec, event.ts.tv_nsec);
+        // printf("Event time: %lo sec %lo nsec\n", lastTime.tv_sec, event.timeout.tv_nsec);
         // printf("\n");
 
         if (ret < 0) {
