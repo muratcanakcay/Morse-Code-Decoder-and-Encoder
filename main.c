@@ -11,7 +11,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <string.h>
-#include <limitimeout.h>
+#include <limits.h>
 
 #ifndef	CONSUMER
 #define	CONSUMER	"Consumer"
@@ -67,8 +67,8 @@ int main(int argc, char **argv)
     {
         i++;
         
-        // request eventimeout
-        ret = gpiod_line_request_both_edges_eventimeout(line, CONSUMER);
+        // request events
+        ret = gpiod_line_request_both_edges_events(line, CONSUMER);
 	    if (ret < 0) 
         {
 		    perror("Request event notification failed\n");
@@ -101,12 +101,12 @@ int main(int argc, char **argv)
         }
 
         ret = gpiod_line_event_read(line, &event);
-        lastTime = event.timeout;
+        lastTime = event.ts;
                 
         // printf("\n");
         // printf("Get event notification on line #%u %d times\n", line_num, i);
         // printf("Event type: %d\n", event.event_type);
-        // printf("Event time: %lo sec %lo nsec\n", lastTime.tv_sec, event.timeout.tv_nsec);
+        // printf("Event time: %lo sec %lo nsec\n", lastTime.tv_sec, event.ts.tv_nsec);
         // printf("\n");
 
         if (ret < 0) {
