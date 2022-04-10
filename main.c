@@ -14,6 +14,7 @@
 #define SYMBOLS_TIMEOUT 1500            // depress duration [ms] for signalling end of pattern
 #define SPACE_TIMEOUT 4500              // depress duration [ms] for space char
 #define SHORT_PRESS_TIMEOUT 1500        // max. press duration [ms] for dot char
+#define LONG_PRESS_TIMEOUT 4500        //  if pressed longer than this [ms] nothing will be added
 #define BOUNCE_TIMEOUT 100              // max. bounce interval [ms]
 
 typedef unsigned int UINT;
@@ -218,13 +219,18 @@ int main(int argc, char **argv)
             prevTime = lastTime;            
             printf("Button kept pressed for %dms\n", duration);
 
-            if (duration < SHORT_PRESS_TIMEOUT)
+            if (duration > LONG_PRESS_TIMEOUT)                      // do nothing
+            {
+                i--;
+                printf("[%d] Not adding anything\n", i);
+            }
+            else if (duration < SHORT_PRESS_TIMEOUT)                // add '.'
             {
                 printf("[%d] Adding '.'\n", i);
                 symbols[i] = '.';
                 symbols[i+1] = '\0';
             }
-            else
+            else                                                    // add '_'
             {
                 printf("[%d] Adding '_'\n", i);
                 symbols[i] = '_';
