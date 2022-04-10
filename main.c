@@ -56,13 +56,17 @@ int main(int argc, char **argv)
 		goto close_chip;
 	}	
 
-	/* Notify event up to 20 times */
-	//i = 0;
-	//while (i <= 20)
-	int lastEventTime = 0; 
-	while (true) 
+	
+	i = 0;	
+    bool secondEvent = false;
+    bool firstLetter = true;
+    int prevVal = 1;
+    timespec_t prevTime;
+    timespec_t lastTime;
+	while (true)
     {
-		
+        i++;
+        
         // request events
         ret = gpiod_line_request_both_edges_events(line, CONSUMER);
 	    if (ret < 0) 
@@ -86,71 +90,116 @@ int main(int argc, char **argv)
 			goto release_line;
 		}
 
-        printf("Event received!\n");
-
-        if(READ)
+        if(secondEvent)
         {
-            // release line from event
+            secondEvent = false;
             gpiod_line_release(line);
+            continue;
+        }
+        else {
+            secondEvent=true;
+        }
 
-            //request input        
-            ret = gpiod_line_request_input(line, CONSUMER);
-            if (ret < 0) 
-            {
-                perror("Request line as input failed\n");
-                goto release_line;
-            }
-
-            int count = 0;
-            oldVal = -1;
-            while (true)
-            {
-                newVal = gpiod_line_get_value(line);
+        ret = gpiod_line_event_read(line, &event);
+        lastTime = event.ts;
                 
-                if (newVal < 0) 
-                {
-                    perror("Read line input failed\n");
-                    goto release_line;
-                }
+        printf("\n");
+        printf("Get event notification on line #%u %d times\n", line_num, i);
+        printf("Event type: %d\n", event.event_type);
+        printf("Event time: %lo sec %lo nsec\n", lastTime.tv_sec, event.ts.tv_nsec);
+        printf("\n");
 
-                printf("Input %d on line #%u\n", newVal, line_num);
-
-                if (newVal == oldVal)
-                {
-                    count++;
-                    if (count>=3) break;
-                    msleep(50);
-                    continue;
-                }
-
-                count = 0;
-                oldVal = newVal;
-                msleep(50);
-            }
-
-            printf("FINAL Input %d on line #%u\n", newVal, line_num);
-
-            gpiod_line_release(line);
+        if (ret < 0) {
+            perror("Read last event notification failed\n");
+            ret = -1;
+            goto release_line;
         }
-        else
+        
+        // release line from event
+        gpiod_line_release(line);
+
+        //request input        
+        ret = gpiod_line_request_input(line, CONSUMER);
+        if (ret < 0) 
         {
-            ret = gpiod_line_event_read(line, &event);
+            perror("Request line as input failed\n");
+            goto release_line;
+        }
 
-            printf("Get event notification on line #%u %d times\n", line_num, i);
-            printf("Event type: %d\n", event.event_type);
-            printf("Event time: %lo sec %lo nsec\n", event.ts.tv_sec, event.ts.tv_nsec);
-
-            if (ret < 0) {
-                perror("Read last event notification failed\n");
-                ret = -1;
+        int count = 0;
+        oldVal = -1;
+        while (true)
+        {
+            newVal = gpiod_line_get_value(line);
+            
+            if (newVal < 0) 
+            {
+                perror("Read line input failed\n");
                 goto release_line;
             }
 
-            gpiod_line_release(line);
+            //printf("Input %d on line #%u\n", newVal, line_num);
+
+            if (newVal == oldVal)
+            {
+                count++;
+                if (count>=5) break;
+                msleep(20);
+                continue;
+            }
+
+            count = 0;
+            oldVal = newVal;
+            msleep(50);
         }
 
-		//sleep(1);
-		//i++;
+        printf("PREV Input %d on line #%u\n", prevVal, line_num);
+        printf("FINAL Input %d on line #%u\n", newVal, line_num);
+
+        //process input
+        // if (firstLetter || (newVal == 0 & prevVal == 0))
+        // {
+        //     gpiod_line_release(line);            
+        //     continue;
+        // }
+
+
+        if (newVal == 1 && prevVal == 0)
+        {
+            
+            
+            // firstLetter
+            // if (firstLetter)
+            // {
+            //     firstLetter = false; 
+            //     gpiod_line_release(line);            
+            //     continue;
+            // }
+            
+            // not firstLetter, so calculate duration
+            int duration = (int)((lastTime.tv_sec - prevTime.tv_sec) * 1000 + (lastTime.tv_nsec - prevTime.tv_nsec) / 1000000); 
+            printf("duration: %dms", duration);
+            printf("\n");
+
+            prevVal = 1;
+            prevTime = lastTime;            
+        }
+
+        if (newVal == 0 && prevVal == 1)
+        {
+            int duration = (int)((lastTime.tv_sec - prevTime.tv_sec) * 1000 + (lastTime.tv_nsec - prevTime.tv_nsec) / 1000000); 
+            printf("duration: %dms", duration);
+            printf("\n");
+
+            prevVal = 0;
+            prevTime = lastTime;            
+        }
+
+
+
+
+
+        gpiod_line_release(line);
 	}
 
 	ret = 0;
