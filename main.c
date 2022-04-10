@@ -126,7 +126,7 @@ int main(int argc, char **argv)
             goto release_line;
         }
 
-        int count = 0;
+        int count = 0; 
         oldVal = -1;
         while (true)
         {
