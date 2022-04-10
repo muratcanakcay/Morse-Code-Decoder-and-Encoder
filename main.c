@@ -36,7 +36,8 @@ int main(int argc, char **argv)
 {
 	char *chipname = "gpiochip0";
 	unsigned int line_num = 13;	// GPIO Pin #13
-	struct timespec timeout = { 10, 0 };
+	struct timespec bounceTimeout = { 0, 100000000 };
+    struct timespec appTimeout = { 10, 0 };
 	struct gpiod_line_event event;
 	struct gpiod_chip *chip;
 	struct gpiod_line *line;
@@ -63,7 +64,9 @@ int main(int argc, char **argv)
     int prevVal = 1;
     timespec_t prevTime;
     timespec_t lastTime;
-	while (true)
+	
+    
+    while (true)
     {
         i++;
         
@@ -74,46 +77,69 @@ int main(int argc, char **argv)
 		    perror("Request event notification failed\n");
 		    ret = -1;
 		    goto release_line;
-        }
+        }        
 
-        // wait for event
-        ret = gpiod_line_event_wait(line, &timeout);
-		if (ret < 0) 
+        ret = gpiod_line_event_wait(line, &appTimeout);
+        if (ret < 0) 
         {
             perror("Wait event notification failed\n");
             ret = -1;
             goto release_line;
-        } 
-        else if (ret == 0) 
-        {
-			printf("Wait event notification on line #%u timeout\n", line_num);
-			goto release_line;
-		}
-
-        if(secondEvent)
-        {
-            secondEvent = false;
-            gpiod_line_release(line);
-            continue;
         }
-        else {
-            secondEvent=true;
+        else if (ret == 0) // appTimeout
+        {
+            printf("Input ended\n");
+            goto release_line;
         }
 
         ret = gpiod_line_event_read(line, &event);
-        lastTime = event.ts;
-                
-        // printf("\n");
-        // printf("Get event notification on line #%u %d times\n", line_num, i);
-        // printf("Event type: %d\n", event.event_type);
-        // printf("Event time: %lo sec %lo nsec\n", lastTime.tv_sec, event.ts.tv_nsec);
-        // printf("\n");
-
-        if (ret < 0) {
+        if (ret < 0) 
+        {
             perror("Read last event notification failed\n");
             ret = -1;
             goto release_line;
         }
+
+        lastTime = event.ts;
+        printf("\n");
+        printf("INITIAL event notification on line #%u %d times\n", line_num, i);
+        printf("Event type: %d\n", event.event_type);
+        printf("Event time: %lo sec %lo nsec\n", lastTime.tv_sec, lastTime.tv_nsec);
+        printf("\n");
+        
+        while(true) // wait for bounce events to end
+        {
+            ret = gpiod_line_event_wait(line, &bounceTimeout);
+            if (ret < 0) 
+            {
+                perror("Wait event notification failed\n");
+                ret = -1;
+                goto release_line;
+            }
+            if (ret == 0) // timeout
+            {
+                break;
+            }
+
+            ret = gpiod_line_event_read(line, &event);
+            if (ret < 0) 
+            {
+                perror("Read last event notification failed\n");
+                ret = -1;
+                goto release_line;
+            }
+
+            lastTime = event.ts;
+            //printf("\n");
+            printf("BOUNCE event notification on line #%u %d times\n", line_num, i);
+            //printf("Event type: %d\n", event.event_type);
+            //printf("Event time: %lo sec %lo nsec\n", lastTime.tv_sec, lastTime.tv_nsec);
+            //printf("\n");
+        }
+
+        printf("\n");
+        printf("End of bounces!\n");
+        printf("\n");
         
         // release line from event
         gpiod_line_release(line);
@@ -126,32 +152,14 @@ int main(int argc, char **argv)
             goto release_line;
         }
 
-        int count = 0; 
-        oldVal = -1;
-        while (true)
+        newVal = gpiod_line_get_value(line);
+        if (newVal < 0) 
         {
-            newVal = gpiod_line_get_value(line);
-            
-            if (newVal < 0) 
-            {
-                perror("Read line input failed\n");
-                goto release_line;
-            }
-
-            //printf("Input %d on line #%u\n", newVal, line_num);
-
-            if (newVal == oldVal)
-            {
-                count++;
-                if (count>=5) break;
-                msleep(20);
-                continue;
-            }
-
-            count = 0;
-            oldVal = newVal;
-            msleep(50);
+            perror("Read line input failed\n");
+            goto release_line;
         }
+
+        //printf("Input %d on line #%u\n", newVal, line_num);
 
         // printf("PREV Input %d on line #%u\n", prevVal, line_num);
         // printf("FINAL Input %d on line #%u\n", newVal, line_num);
@@ -163,14 +171,14 @@ int main(int argc, char **argv)
         //     continue;
         // }
 
+        printf("lastTime: %ld.%ld\n", lastTime.tv_sec, lastTime.tv_nsec);
+        printf("prevTime: %ld.%ld\n", prevTime.tv_sec, prevTime.tv_nsec);
         int duration = (int)((lastTime.tv_sec - prevTime.tv_sec) * 1000 + (lastTime.tv_nsec - prevTime.tv_nsec) / 1000000); 
         printf("%d -> %dms -> %d", prevVal, duration, newVal);
         printf("\n");
 
         if (newVal == 1 && prevVal == 0)
         {
-            
-            
             // firstLetter
             // if (firstLetter)
             // {
@@ -185,10 +193,9 @@ int main(int argc, char **argv)
             // printf("\n");
 
             prevVal = 1;
-            prevTime = lastTime;            
+            prevTime = lastTime;
         }
-
-        if (newVal == 0 && prevVal == 1)
+        else if (newVal == 0 && prevVal == 1)
         {
             // int duration = (int)((lastTime.tv_sec - prevTime.tv_sec) * 1000 + (lastTime.tv_nsec - prevTime.tv_nsec) / 1000000); 
             // printf("duration: %dms", duration);
@@ -196,6 +203,10 @@ int main(int argc, char **argv)
 
             prevVal = 0;
             prevTime = lastTime;            
+        }
+        else
+        {
+            prevTime = lastTime;
         }
 
 
