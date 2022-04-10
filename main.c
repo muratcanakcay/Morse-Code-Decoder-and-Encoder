@@ -18,6 +18,10 @@
 #endif
 
 #define READ 1
+#define APP_TIMEOUT 10000               // depress duration [ms] for input end
+#define SPACE_TIMEOUT 1500              // depress duration [ms] for space char
+#define SHORT_PRESS_TIMEOUT 1000        // max. press duration [ms] for dot char
+#define BOUNCE_TIMEOUT 100              // max. bounce interval [ms]
 
 typedef unsigned int UINT;
 typedef struct timespec timespec_t;
@@ -36,8 +40,8 @@ int main(int argc, char **argv)
 {
 	char *chipname = "gpiochip0";
 	unsigned int line_num = 13;	// GPIO Pin #13
-	struct timespec bounceTimeout = { 0, 100000000 };
-    struct timespec appTimeout = { 10, 0 };
+	struct timespec bounceTimeout = { 0, BOUNCE_TIMEOUT * 1000000 };
+    struct timespec appTimeout = { APP_TIMEOUT/1000, 0 };
 	struct gpiod_line_event event;
 	struct gpiod_chip *chip;
 	struct gpiod_line *line;
@@ -58,18 +62,17 @@ int main(int argc, char **argv)
 	}	
 
 	
-	i = 0;	
+	i = -1;	
     bool secondEvent = false;
     bool firstLetter = true;
     int prevVal = 1;
     timespec_t prevTime;
     timespec_t lastTime;
-	
+
+    char symbols[500] = "\0";
     
     while (true)
     {
-        i++;
-        
         // request events
         ret = gpiod_line_request_both_edges_events(line, CONSUMER);
 	    if (ret < 0) 
@@ -101,11 +104,11 @@ int main(int argc, char **argv)
         }
 
         lastTime = event.ts;
-        printf("\n");
-        printf("INITIAL event notification on line #%u %d times\n", line_num, i);
-        printf("Event type: %d\n", event.event_type);
-        printf("Event time: %lo sec %lo nsec\n", lastTime.tv_sec, lastTime.tv_nsec);
-        printf("\n");
+        // printf("\n");
+        // printf("INITIAL event notification on line #%u %d times\n", line_num, i);
+        // printf("Event type: %d\n", event.event_type);
+        // printf("Event time: %lo sec %lo nsec\n", lastTime.tv_sec, lastTime.tv_nsec);
+        // printf("\n");
         
         while(true) // wait for bounce events to end
         {
@@ -131,15 +134,15 @@ int main(int argc, char **argv)
 
             lastTime = event.ts;
             //printf("\n");
-            printf("BOUNCE event notification on line #%u %d times\n", line_num, i);
+            //printf("BOUNCE event notification on line #%u %d times\n", line_num, i);
             //printf("Event type: %d\n", event.event_type);
             //printf("Event time: %lo sec %lo nsec\n", lastTime.tv_sec, lastTime.tv_nsec);
             //printf("\n");
         }
 
-        printf("\n");
-        printf("End of bounces!\n");
-        printf("\n");
+        // printf("\n");
+        // printf("End of bounces!\n");
+        // printf("\n");
         
         // release line from event
         gpiod_line_release(line);
@@ -171,13 +174,12 @@ int main(int argc, char **argv)
         //     continue;
         // }
 
-        printf("lastTime: %ld.%ld\n", lastTime.tv_sec, lastTime.tv_nsec);
-        printf("prevTime: %ld.%ld\n", prevTime.tv_sec, prevTime.tv_nsec);
+        // printf("lastTime: %ld.%ld\n", lastTime.tv_sec, lastTime.tv_nsec);
+        // printf("prevTime: %ld.%ld\n", prevTime.tv_sec, prevTime.tv_nsec);
         int duration = (int)((lastTime.tv_sec - prevTime.tv_sec) * 1000 + (lastTime.tv_nsec - prevTime.tv_nsec) / 1000000); 
-        printf("%d -> %dms -> %d", prevVal, duration, newVal);
-        printf("\n");
+        printf("%d -> %dms -> %d\n", prevVal, duration, newVal);        
 
-        if (newVal == 1 && prevVal == 0)
+        if (newVal == 1 && prevVal == 0) // button released, duration is the duration the button kept pressed
         {
             // firstLetter
             // if (firstLetter)
@@ -191,27 +193,54 @@ int main(int argc, char **argv)
             // int duration = (int)((lastTime.tv_sec - prevTime.tv_sec) * 1000 + (lastTime.tv_nsec - prevTime.tv_nsec) / 1000000); 
             // printf("duration: %dms", duration);
             // printf("\n");
+            
+            i++;
+            printf("Button kept pressed for %dms\n", duration);
 
+            if (duration < SHORT_PRESS_TIMEOUT)
+            {
+                printf("[%d] Adding '.'\n", i);
+                symbols[i] = '.';
+                symbols[i+1] = '\0';
+            }
+            else
+            {
+                printf("[%d] Adding '_'\n", i);
+                symbols[i] = '_';
+                symbols[i+1] = '\0';
+            }
+            
+            printf("\n");
             prevVal = 1;
-            prevTime = lastTime;
-        }
-        else if (newVal == 0 && prevVal == 1)
-        {
-            // int duration = (int)((lastTime.tv_sec - prevTime.tv_sec) * 1000 + (lastTime.tv_nsec - prevTime.tv_nsec) / 1000000); 
-            // printf("duration: %dms", duration);
-            // printf("\n");
-
-            prevVal = 0;
             prevTime = lastTime;            
+        }
+        else if (newVal == 0 && prevVal == 1) // button pressed
+        {
+            printf("Button kept depressed for %dms\n", duration);
+            
+            if (duration > SPACE_TIMEOUT && duration < APP_TIMEOUT)
+            {
+                i++;
+                printf("[%d] Adding space\n", i);
+                symbols[i] = ' ';
+                symbols[i+1] = '\0';
+            }
+            else
+            {
+                printf("[%d] Not adding anything\n", i);
+            }
+            
+            printf("\n");
+            prevVal = 0;
+            prevTime = lastTime;
         }
         else
         {
+            printf("\n");
             prevTime = lastTime;
         }
 
-
-
-
+        printf("Symbols: '%s' (%lu)\n\n", symbols, strlen(symbols));
 
         gpiod_line_release(line);
 	}
