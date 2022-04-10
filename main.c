@@ -19,12 +19,59 @@
 
 #define READ 1
 #define APP_TIMEOUT 10000               // depress duration [ms] for input end
-#define SPACE_TIMEOUT 1500              // depress duration [ms] for space char
-#define SHORT_PRESS_TIMEOUT 1000        // max. press duration [ms] for dot char
+#define SYMBOLS_TIMEOUT 1500              // depress duration [ms] for space char
+#define SPACE_TIMEOUT 3000              // depress duration [ms] for space char
+#define SHORT_PRESS_TIMEOUT 1500        // max. press duration [ms] for dot char
 #define BOUNCE_TIMEOUT 100              // max. bounce interval [ms]
 
 typedef unsigned int UINT;
 typedef struct timespec timespec_t;
+
+const char MORSE_CODE[][6] =
+{
+    " ",        // Space = 32
+    "", "", "", "", "", "", "", // Not used
+    "", "", "", "", "", "", "", // Not used
+    "",                         // Not used
+    "_____",    // 0 = 48
+    ".____",    // 1
+    "..___",    // 2
+    "...__",    // 3
+    "...._",    // 4
+    ".....",    // 5
+    "_....",    // 6
+    "__...",    // 7
+    "___..",    // 8
+    "____.",    // 9 = 57
+    "", "", "", "", "", "", "", // Not used
+    "._",       // A = 65
+    "_...",     // B
+    "_._.",     // C
+    "_..",      // D
+    ".",        // E
+    ".._.",     // F
+    "__.",      // G
+    "....",     // H
+    "..",       // I
+    ".___",     // J
+    "_._",      // K
+    "._..",     // L
+    "__",       // M
+    "_.",       // N
+    "___",      // O
+    ".__.",     // P
+    "__._",     // Q
+    "._.",      // R
+    "...",      // S
+    "_",        // T
+    ".._",      // U
+    "..._",     // V
+    ".__",      // W
+    "_.._",     // X
+    "_.__",     // Y
+    "__..",     // Z = 90
+    "X"         // error
+};
 
 void msleep(UINT milisec) 
 {
@@ -45,7 +92,7 @@ int main(int argc, char **argv)
 	struct gpiod_line_event event;
 	struct gpiod_chip *chip;
 	struct gpiod_line *line;
-	int i, ret, newVal, oldVal;
+	int i, l, ret, newVal, oldVal;
 
 	chip = gpiod_chip_open_by_name(chipname);
 	if (!chip) {
@@ -62,14 +109,18 @@ int main(int argc, char **argv)
 	}	
 
 	
-	i = -1;	
+	i = -1; // symbols index
+    l = 0;  // letters index
     bool secondEvent = false;
     bool firstLetter = true;
     int prevVal = 1;
     timespec_t prevTime;
     timespec_t lastTime;
 
-    char symbols[500] = "\0";
+    char symbols[500] = "\0"; // will be [6] at the end
+    char letters[500] = "\0";
+
+    printf("Size of MORSE_CODE array = %lu\n", sizeof(MORSE_CODE)/sizeof(char[6]));
     
     while (true)
     {
@@ -167,34 +218,17 @@ int main(int argc, char **argv)
         // printf("PREV Input %d on line #%u\n", prevVal, line_num);
         // printf("FINAL Input %d on line #%u\n", newVal, line_num);
 
-        //process input
-        // if (firstLetter || (newVal == 0 & prevVal == 0))
-        // {
-        //     gpiod_line_release(line);            
-        //     continue;
-        // }
-
         // printf("lastTime: %ld.%ld\n", lastTime.tv_sec, lastTime.tv_nsec);
         // printf("prevTime: %ld.%ld\n", prevTime.tv_sec, prevTime.tv_nsec);
+
         int duration = (int)((lastTime.tv_sec - prevTime.tv_sec) * 1000 + (lastTime.tv_nsec - prevTime.tv_nsec) / 1000000); 
         printf("%d -> %dms -> %d\n", prevVal, duration, newVal);        
 
         if (newVal == 1 && prevVal == 0) // button released, duration is the duration the button kept pressed
         {
-            // firstLetter
-            // if (firstLetter)
-            // {
-            //     firstLetter = false; 
-            //     gpiod_line_release(line);            
-            //     continue;
-            // }
-            
-            // not firstLetter, so calculate duration
-            // int duration = (int)((lastTime.tv_sec - prevTime.tv_sec) * 1000 + (lastTime.tv_nsec - prevTime.tv_nsec) / 1000000); 
-            // printf("duration: %dms", duration);
-            // printf("\n");
-            
             i++;
+            prevVal = 1;
+            prevTime = lastTime;            
             printf("Button kept pressed for %dms\n", duration);
 
             if (duration < SHORT_PRESS_TIMEOUT)
@@ -210,40 +244,78 @@ int main(int argc, char **argv)
                 symbols[i+1] = '\0';
             }
             
-            printf("\n");
-            prevVal = 1;
-            prevTime = lastTime;            
+            printf("\n");            
         }
-        else if (newVal == 0 && prevVal == 1) // button pressed
+        else if (newVal == 0 && prevVal == 1) // button pressed, duration is the duration the button kept depressed
         {
+            prevVal = 0;
+            prevTime = lastTime;            
             printf("Button kept depressed for %dms\n", duration);
             
-            if (duration > SPACE_TIMEOUT && duration < APP_TIMEOUT)
+            if (duration > SYMBOLS_TIMEOUT && duration < APP_TIMEOUT)
             {
+                
                 i++;
-                printf("[%d] Adding space\n", i);
-                symbols[i] = ' ';
-                symbols[i+1] = '\0';
+                printf("[%d] Calculating symbol\n", i);
+                // symbols[i] = ' ';
+                // symbols[i+1] = '\0';
+
+                // at this point a letter should be formed, check the MORSE_CODE array for it
+                int idx;
+                for(idx = 0; idx < sizeof(MORSE_CODE) /  sizeof(char[6]); idx++)
+                {
+                    if (strcmp(symbols, MORSE_CODE[idx]) == 0) // idx found
+                        break;
+                }
+
+                printf("The pattern '%s' is at index %d and matches to %c\n", symbols, idx, idx+32);
+                i = -1;
+                symbols[0] = '\0';
+
+                letters[l] = ' ' + idx;
+                if (idx == sizeof(MORSE_CODE) /  sizeof(char[6]))
+                {
+                    letters[l] = '#';   // error in pattern
+                }
+
+                letters[l+1] = '\0';
+                l++;
+                
+                if (duration > SPACE_TIMEOUT) // insert a space in letters[]
+                {
+                    printf("[%d] Adding space\n", i);
+                    letters[l] = ' ';
+                    letters[l+1] = '\0';
+                    l++;
+                }
             }
             else
             {
                 printf("[%d] Not adding anything\n", i);
             }
             
-            printf("\n");
-            prevVal = 0;
-            prevTime = lastTime;
+            printf("\n");            
         }
         else
         {
+            printf("[%d] Not adding anything\n", i);
             printf("\n");
             prevTime = lastTime;
         }
 
-        printf("Symbols: '%s' (%lu)\n\n", symbols, strlen(symbols));
+        printf("Symbols: '%s' (%lu)\n", symbols, strlen(symbols));
+        printf("Letters: '%s' (%lu)\n", letters, strlen(letters));
+        
+        if (strlen(symbols) > 5)
+        {
+            printf("INPUT TOO LONG!\n\n");
+        }
+    
+
+
 
         gpiod_line_release(line);
-	}
+	} // end main loop
 
 	ret = 0;
 
