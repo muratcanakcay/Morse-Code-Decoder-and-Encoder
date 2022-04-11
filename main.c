@@ -28,9 +28,9 @@ typedef unsigned int UINT;
 typedef struct timespec timespec_t;
 
 const char DOT[1] = ".";
-const char DASH[1] = "-";
+const char DASH[1] = "_";
 const char SPACE[1] = " ";
-const int UNIT_MILI_SECONDS = 100;
+const int UNIT_MILI_SECONDS = 500;
 const int GPIO_LOW = 0;
 const int GPIO_HIGH = 1;
 
@@ -80,11 +80,12 @@ const char MORSE_CODE[][6] =
     "X"         // error
 };
 
-int outputMorseCharacter(int gpioPin, char *character);
-int outputBuzzer(int gpioPin, char dotDash);
-int setGPIOPin(int gpioPin, int miliSeconds);
-bool isValidMorseCodeCharacter(char *character);
-void msleep(UINT miliSecconds);
+int outputMorseCodesentence(struct gpiod_line* line, char *sentence);
+int outputMorseCharacter(struct gpiod_line* line, int character);
+int outputBuzzer(struct gpiod_line* line, char dotDash);
+int setGPIOPin(struct gpiod_line* line, int miliSeconds);
+bool isValidMorseCodeCharacter(int character);
+void msleep(UINT miliSeconds);
 
 
 
@@ -327,9 +328,23 @@ int main(int argc, char **argv)
     
     if (LEDS)
     {
+        UINT line_num = 24;	// GPIO Pin #24
+        
         char *input = NULL;
         size_t zero = 0;
         ssize_t read = 0;
+
+        if ((line = gpiod_chip_get_line(chip, line_num)) == NULL) 
+        {
+		    perror("Get line failed\n");
+		    goto close_chip;
+        }
+
+        if ((ret = gpiod_line_request_output(line, CONSUMER, 0)) < 0) 
+        {
+            perror("Request line as output failed\n");
+            goto release_line;
+        }
         
         while (1) 
         {
@@ -341,7 +356,8 @@ int main(int argc, char **argv)
             input[read-1] = '\0';
             printf("You entered = '%s'\n", input);
             printf("Input length = %zu\n", strlen(input));
-            
+
+            outputMorseCodesentence(line, input);            
 
             puts("");
         }
@@ -377,12 +393,12 @@ void msleep(UINT miliSeconds)
 /*
  * Output a morse code sentence
  */
-int outputMorseCodesentence(int gpioPin, char *sentence)
+int outputMorseCodesentence(struct gpiod_line* line, char *sentence)
 {
     int sentenceLength = strlen(sentence);
     for(int charIndex=0; charIndex<sentenceLength; charIndex++)
     {
-        if (outputMorseCharacter(gpioPin, (char*)toupper(sentence[charIndex])) != EXIT_SUCCESS)
+        if (outputMorseCharacter(line, toupper(sentence[charIndex])) != EXIT_SUCCESS)
         {
             return EXIT_FAILURE;
         }
@@ -395,32 +411,32 @@ int outputMorseCodesentence(int gpioPin, char *sentence)
 /*
  * Output a morse code character
  */
-int outputMorseCharacter(int gpioPin, char *character)
+int outputMorseCharacter(struct gpiod_line* line, int character)
 {
     if (isValidMorseCodeCharacter(character) == false)
     {
         return EXIT_SUCCESS;
     }
 
-    putchar((int)character);
+    putchar(character);
     putchar(*SPACE);
 
-    int morseIndex = (int)character - 32;
+    int morseIndex = character - 32;
     int morseCodeLength = strlen(MORSE_CODE[morseIndex]);
     for(int charIndex=0; charIndex<morseCodeLength; charIndex++)
     {
         if (MORSE_CODE[morseIndex][charIndex] == *SPACE)
         {
-            usleep(UNIT_MILI_SECONDS * 7); // Space between words = 7 units
+            msleep(UNIT_MILI_SECONDS * 7); // Space between words = 7 units
             continue;
         }
 
-        if (outputBuzzer(gpioPin, MORSE_CODE[morseIndex][charIndex]) != EXIT_SUCCESS)
+        if (outputBuzzer(line, MORSE_CODE[morseIndex][charIndex]) != EXIT_SUCCESS)
         {
             return EXIT_FAILURE;
         }
 
-        usleep(UNIT_MILI_SECONDS); // Space between parts of same letters = 1 unit
+        msleep(UNIT_MILI_SECONDS); // Space between parts of same letters = 1 unit
     }
 
     putchar(*SPACE);
@@ -431,18 +447,18 @@ int outputMorseCharacter(int gpioPin, char *character)
 /*
  * Output the dot or dash from the buzzer
  */
-int outputBuzzer(int gpioPin, char dotDash)
+int outputBuzzer(struct gpiod_line* line, char dotDash)
 {
     if (dotDash == *DOT)
     {
         putchar(*DOT);
-        return setGPIOPin(gpioPin, UNIT_MILI_SECONDS); // Dot = 1 unit
+        return setGPIOPin(line, UNIT_MILI_SECONDS); // Dot = 1 unit
     }
 
     if (dotDash == *DASH)
     {
         putchar(*DASH);
-        return setGPIOPin(gpioPin, UNIT_MILI_SECONDS * 3); // Dash = 3 units
+        return setGPIOPin(line, UNIT_MILI_SECONDS * 3); // Dash = 3 units
     }
 
     printf("Error cannot determine if dot or dash.");
@@ -453,19 +469,23 @@ int outputBuzzer(int gpioPin, char dotDash)
 /*
  * Set GPIO pin to high then low for a length of micro seconds
  */
-int setGPIOPin(int gpioPin, int miliSeconds)
+int setGPIOPin(struct gpiod_line* line, int miliSeconds)
 {
-    // if (gpioWrite(gpioPin, GPIO_HIGH) != EXIT_SUCCESS)
-    // {
-    //     return EXIT_FAILURE;
-    // }
+    int ret;
 
-    // usleep(miliSeconds);
+    if ((ret = gpiod_line_set_value(line, GPIO_HIGH))  < 0) 
+    {
+        perror("Set line output high failed\n");
+        return EXIT_FAILURE;
+    }
 
-    // if (gpioWrite(gpioPin, GPIO_LOW) != EXIT_SUCCESS)
-    // {
-    //     return EXIT_FAILURE;
-    // }
+    msleep(miliSeconds);
+
+    if ((ret = gpiod_line_set_value(line, GPIO_LOW))  < 0) 
+    {
+        perror("Set line output low failed\n");
+        return EXIT_FAILURE;
+    }
 
     return EXIT_SUCCESS;
 }
@@ -473,10 +493,8 @@ int setGPIOPin(int gpioPin, int miliSeconds)
 /*
  * Validate if we support the entered character
  */
-bool isValidMorseCodeCharacter(char* character)
+bool isValidMorseCodeCharacter(int charIndex)
 {
-    int charIndex = (int)character;
-
     if (charIndex >= 65 && charIndex <= 90)
     {
         return true;    // Alphabet character
