@@ -87,8 +87,6 @@ int setGPIOPin(struct gpiod_line* line, int miliSeconds);
 bool isValidMorseCodeCharacter(int character);
 void msleep(UINT miliSeconds);
 
-
-
 int main(int argc, char **argv)
 {
     char *chipname = "gpiochip0";
@@ -137,7 +135,7 @@ int main(int argc, char **argv)
                 perror("Request event notification failed\n");
                 ret = -1;
                 goto release_line;
-            }        
+            }
 
             if ((ret = gpiod_line_event_wait(line, &appTimeout)) < 0)        
             {
@@ -243,13 +241,13 @@ int main(int argc, char **argv)
                 else if (duration > SHORT_PRESS_TIMEOUT)                // add '_'
                 {
                     printf("[%d] Adding '_'\n", i);
-                    symbols[i] = '_';
+                    symbols[i] = *DASH;
                     symbols[i+1] = '\0';
                 }
                 else                                                    // add '.'
                 {
                     printf("[%d] Adding '.'\n", i);
-                    symbols[i] = '.';
+                    symbols[i] = *DOT;
                     symbols[i+1] = '\0';                    
                 }
                 
@@ -291,7 +289,7 @@ int main(int argc, char **argv)
                     if (duration > SPACE_TIMEOUT) // also add a space after the letter in letters[]
                     {
                         printf("[%d] Adding space\n", i);
-                        letters[l] = ' ';
+                        letters[l] = *SPACE;
                         letters[l+1] = '\0';
                         l++;
                     }
