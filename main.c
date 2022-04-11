@@ -4,6 +4,10 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <string.h>
+#include <ctype.h>
+#include <stdlib.h>
+#include <stdbool.h>
+
 
 #ifndef	CONSUMER
 #define	CONSUMER	"Consumer"
@@ -13,14 +17,22 @@
 #define SYMBOLS_TIMEOUT 1500            // depress duration [ms] for signalling end of pattern
 #define SPACE_TIMEOUT 4500              // depress duration [ms] for space char
 #define SHORT_PRESS_TIMEOUT 1500        // max. press duration [ms] for dot char
-#define LONG_PRESS_TIMEOUT 4500        //  if pressed longer than this [ms] nothing will be added
+#define LONG_PRESS_TIMEOUT 4500         //  if pressed longer than this [ms] nothing will be added
 #define BOUNCE_TIMEOUT 100              // max. bounce interval [ms]
 
-#define BUTTON 1
+
+#define BUTTON 0
 #define LEDS !BUTTON
 
 typedef unsigned int UINT;
 typedef struct timespec timespec_t;
+
+const char DOT[1] = ".";
+const char DASH[1] = "-";
+const char SPACE[1] = " ";
+const int UNIT_MILI_SECONDS = 100;
+const int GPIO_LOW = 0;
+const int GPIO_HIGH = 1;
 
 const char MORSE_CODE[][6] =
 {
@@ -68,15 +80,13 @@ const char MORSE_CODE[][6] =
     "X"         // error
 };
 
-void msleep(UINT milisec) 
-{
-    time_t sec= (int)(milisec/1000);
-    milisec = milisec - (sec*1000);
-    timespec_t req= {0};
-    req.tv_sec = sec;
-    req.tv_nsec = milisec * 1000000L;
-    if(nanosleep(&req,&req)) perror("nanosleep");
-}
+int outputMorseCharacter(int gpioPin, char *character);
+int outputBuzzer(int gpioPin, char dotDash);
+int setGPIOPin(int gpioPin, int miliSeconds);
+bool isValidMorseCodeCharacter(char *character);
+void msleep(UINT miliSecconds);
+
+
 
 int main(int argc, char **argv)
 {
@@ -150,11 +160,11 @@ int main(int argc, char **argv)
             lastTime = event.ts; // keep record of when initial event occurred to calculate duration
 
             /* informative code */
-            // printf("\n");
+            // puts("");
             // printf("INITIAL event notification on line #%u %d times\n", line_num, i);
             // printf("Event type: %d\n", event.event_type);
             // printf("Event time: %lo sec %lo nsec\n", event.ts.tv_sec, event.ts.tv_nsec);
-            // printf("\n");
+            // puts("");
             
             // debouncing loop - wait for bounce events to end
             while(true)
@@ -179,16 +189,16 @@ int main(int argc, char **argv)
 
                 
                 /* informative code */            
-                //printf("\n");
+                //puts("");
                 //printf("BOUNCE event notification on line #%u %d times\n", line_num, i);
                 //printf("Event type: %d\n", event.event_type);
                 //printf("Event time: %lo sec %lo nsec\n", event.ts.tv_sec, event.ts.tv_nsec);
-                //printf("\n");
+                //puts("");
             }
 
-            // printf("\n");
+            // puts("");
             // printf("End of bounces!\n");
-            // printf("\n");
+            // puts("");
             
             // release line from event request
             gpiod_line_release(line);
@@ -242,7 +252,7 @@ int main(int argc, char **argv)
                     symbols[i+1] = '\0';                    
                 }
                 
-                printf("\n");            
+                puts("");            
             }
             else if (newVal == 0 && prevVal == 1) // button pressed, duration is the duration the button kept depressed
             {
@@ -294,12 +304,12 @@ int main(int argc, char **argv)
                     printf("[%d] Not adding anything\n", i);
                 }
                 
-                printf("\n");
+                puts("");
             }
             else // input did not change its value so do nothing
             {
                 printf("[%d] Not adding anything\n", i);
-                printf("\n");
+                puts("");
                 prevTime = lastTime;
             }
 
@@ -317,8 +327,26 @@ int main(int argc, char **argv)
     
     if (LEDS)
     {
-        printf("START HERE!\n");
-        sleep(5);
+        char *input = NULL;
+        size_t zero = 0;
+        ssize_t read = 0;
+        
+        while (1) 
+        {
+            puts("Enter a your input:");
+            if ((read = getline(&input, &zero, stdin)) == -1)
+            {
+                break; 
+            }
+            input[read-1] = '\0';
+            printf("You entered = '%s'\n", input);
+            printf("Input length = %zu\n", strlen(input));
+            
+
+            puts("");
+        }
+        
+        free(input);
     }
 
 
@@ -331,4 +359,138 @@ close_chip:
     gpiod_chip_close(chip);
 end:
     return ret;
+}
+
+/*
+ * Sleep for given miliseconds
+ */
+void msleep(UINT miliSeconds) 
+{
+    time_t sec= (int)(miliSeconds/1000);
+    miliSeconds = miliSeconds - (sec*1000);
+    timespec_t req= {0};
+    req.tv_sec = sec;
+    req.tv_nsec = miliSeconds * 1000000L;
+    if(nanosleep(&req,&req)) perror("nanosleep");
+}
+
+/*
+ * Output a morse code sentence
+ */
+int outputMorseCodesentence(int gpioPin, char *sentence)
+{
+    int sentenceLength = strlen(sentence);
+    for(int charIndex=0; charIndex<sentenceLength; charIndex++)
+    {
+        if (outputMorseCharacter(gpioPin, (char*)toupper(sentence[charIndex])) != EXIT_SUCCESS)
+        {
+            return EXIT_FAILURE;
+        }
+        msleep(UNIT_MILI_SECONDS * 3); // Space between letters = 3 units
+    }
+
+    return EXIT_SUCCESS;
+}
+
+/*
+ * Output a morse code character
+ */
+int outputMorseCharacter(int gpioPin, char *character)
+{
+    if (isValidMorseCodeCharacter(character) == false)
+    {
+        return EXIT_SUCCESS;
+    }
+
+    putchar((int)character);
+    putchar(*SPACE);
+
+    int morseIndex = (int)character - 32;
+    int morseCodeLength = strlen(MORSE_CODE[morseIndex]);
+    for(int charIndex=0; charIndex<morseCodeLength; charIndex++)
+    {
+        if (MORSE_CODE[morseIndex][charIndex] == *SPACE)
+        {
+            usleep(UNIT_MILI_SECONDS * 7); // Space between words = 7 units
+            continue;
+        }
+
+        if (outputBuzzer(gpioPin, MORSE_CODE[morseIndex][charIndex]) != EXIT_SUCCESS)
+        {
+            return EXIT_FAILURE;
+        }
+
+        usleep(UNIT_MILI_SECONDS); // Space between parts of same letters = 1 unit
+    }
+
+    putchar(*SPACE);
+
+    return EXIT_SUCCESS;
+}
+
+/*
+ * Output the dot or dash from the buzzer
+ */
+int outputBuzzer(int gpioPin, char dotDash)
+{
+    if (dotDash == *DOT)
+    {
+        putchar(*DOT);
+        return setGPIOPin(gpioPin, UNIT_MILI_SECONDS); // Dot = 1 unit
+    }
+
+    if (dotDash == *DASH)
+    {
+        putchar(*DASH);
+        return setGPIOPin(gpioPin, UNIT_MILI_SECONDS * 3); // Dash = 3 units
+    }
+
+    printf("Error cannot determine if dot or dash.");
+
+    return EXIT_FAILURE;
+}
+
+/*
+ * Set GPIO pin to high then low for a length of micro seconds
+ */
+int setGPIOPin(int gpioPin, int miliSeconds)
+{
+    // if (gpioWrite(gpioPin, GPIO_HIGH) != EXIT_SUCCESS)
+    // {
+    //     return EXIT_FAILURE;
+    // }
+
+    // usleep(miliSeconds);
+
+    // if (gpioWrite(gpioPin, GPIO_LOW) != EXIT_SUCCESS)
+    // {
+    //     return EXIT_FAILURE;
+    // }
+
+    return EXIT_SUCCESS;
+}
+
+/*
+ * Validate if we support the entered character
+ */
+bool isValidMorseCodeCharacter(char* character)
+{
+    int charIndex = (int)character;
+
+    if (charIndex >= 65 && charIndex <= 90)
+    {
+        return true;    // Alphabet character
+    }
+
+    if (charIndex >= 48 && charIndex <= 57)
+    {
+        return true;    // Numeric character
+    }
+
+    if (charIndex == 32)
+    {
+        return true;    // Spaces
+    }
+
+    return false;
 }
