@@ -110,8 +110,8 @@ int main(int argc, char **argv)
         char symbols[500] = "\0"; // will be [6] at the end
         char letters[500] = "\0";        
 
-        line = gpiod_chip_get_line(chip, line_num);
-        if (!line) {
+        if ((line = gpiod_chip_get_line(chip, line_num)) == NULL)
+        {
             perror("Get line failed\n");
             ret = -1;
             goto close_chip;
@@ -121,8 +121,7 @@ int main(int argc, char **argv)
         while (true)
         {
             // request events
-            ret = gpiod_line_request_both_edges_events(line, CONSUMER);
-            if (ret < 0) 
+            if ((ret = gpiod_line_request_both_edges_events(line, CONSUMER)) < 0) 
             {
                 perror("Request event notification failed\n");
                 ret = -1;
@@ -230,17 +229,17 @@ int main(int argc, char **argv)
                     i--;
                     printf("[%d] Not adding anything\n", i);
                 }
-                else if (duration < SHORT_PRESS_TIMEOUT)                // add '.'
-                {
-                    printf("[%d] Adding '.'\n", i);
-                    symbols[i] = '.';
-                    symbols[i+1] = '\0';
-                }
-                else                                                    // add '_'
+                else if (duration > SHORT_PRESS_TIMEOUT)                // add '_'
                 {
                     printf("[%d] Adding '_'\n", i);
                     symbols[i] = '_';
                     symbols[i+1] = '\0';
+                }
+                else                                                    // add '.'
+                {
+                    printf("[%d] Adding '.'\n", i);
+                    symbols[i] = '.';
+                    symbols[i+1] = '\0';                    
                 }
                 
                 printf("\n");            
@@ -251,14 +250,12 @@ int main(int argc, char **argv)
                 prevTime = lastTime;            
                 printf("Button kept depressed for %dms\n", duration);
                 
-                if (duration > SYMBOLS_TIMEOUT && duration < APP_TIMEOUT)
+                if (duration > SYMBOLS_TIMEOUT && duration < APP_TIMEOUT) // long silence -> translate symbols into letter
                 {
                     
                     i++;
                     printf("[%d] Calculating symbol\n", i);
-                    // symbols[i] = ' ';
-                    // symbols[i+1] = '\0';
-
+                    
                     // at this point a letter should be formed, check the MORSE_CODE array for it
                     int idx;
                     for(idx = 0; idx < sizeof(MORSE_CODE) /  sizeof(char[6]); idx++)
@@ -269,9 +266,7 @@ int main(int argc, char **argv)
 
                     printf("The pattern '%s' is at index %d and matches to %c\n", symbols, idx, idx+32);
                     
-                    // clear symbols[] and insert corresponding letter in letters[]
-                    i = -1;
-                    symbols[0] = '\0';
+                    // insert corresponding letter in letters[]                    
                     letters[l] = ' ' + idx;
                     
                     if (idx == morse_code_array_size)
@@ -282,22 +277,26 @@ int main(int argc, char **argv)
                     letters[l+1] = '\0';
                     l++;
                     
-                    if (duration > SPACE_TIMEOUT) // insert a space in letters[]
+                    if (duration > SPACE_TIMEOUT) // also add a space after the letter in letters[]
                     {
                         printf("[%d] Adding space\n", i);
                         letters[l] = ' ';
                         letters[l+1] = '\0';
                         l++;
                     }
+
+                    // clear symbols[]
+                    i = -1;
+                    symbols[0] = '\0';
                 }
-                else
+                else // short silence -> continue with reading the symbol pattern
                 {
                     printf("[%d] Not adding anything\n", i);
                 }
                 
                 printf("\n");
             }
-            else
+            else // input did not change its value so do nothing
             {
                 printf("[%d] Not adding anything\n", i);
                 printf("\n");
@@ -307,7 +306,7 @@ int main(int argc, char **argv)
             printf("Symbols: '%s' (%lu)\n", symbols, strlen(symbols));
             printf("Letters: '%s' (%lu)\n", letters, strlen(letters));
             
-            if (strlen(symbols) > 5) // TODO: should reset symbols[]
+            if (strlen(symbols) > 5) // TODO: here I should reset symbols[]
             {
                 printf("INPUT TOO LONG!\n\n");
             }
