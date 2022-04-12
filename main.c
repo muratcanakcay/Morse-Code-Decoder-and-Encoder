@@ -1,4 +1,4 @@
-//#include </malina/akcaym/buildroot-2022.02/output/build/libgpiod-1.6.3/include/gpiod.h>
+//#include </malina/akcaym/buildroot-2022.02/output/build/libgpiod-1.6.3/include/gpiod.h>      // for packaging
 #include <gpiod.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -33,8 +33,7 @@ const int GPIO_HIGH = 1;
 const UINT BUTTON_GPIO = 13;	// GPIO Pin #13
 const UINT LED_GPIO = 24;	// GPIO Pin #24
 
-const char MORSE_CODE[][6] =
-{
+const char MORSE_CODE[][6] = {
     " ",        // Space = 32
     "", "", "", "", "", "", "", // Not used
     "", "", "", "", "", "", "", // Not used
@@ -194,25 +193,22 @@ int display_menu(bool* MORSE_DECODE)
     Anything else to QUIT.\n");
     putchar('>');
 
-    if ((read = getline(&input, &zero, stdin)) < 0) {            
+    if ((read = getline(&input, &zero, stdin)) < 0) {
         perror("getline");
         return EXIT_FAILURE;
     }
 
-    if(input[0] == '1') {
+    if(input[0] == '1')
         *MORSE_DECODE = true;
-        free(input);
-        return EXIT_SUCCESS;
-    }
-    else if (input[0] == '2') {
+    else if (input[0] == '2')
         *MORSE_DECODE = false;
-        free(input);
-        return EXIT_SUCCESS;
-    }
     else {
         free(input);
         return 2;
     }
+
+    free(input);
+    return EXIT_SUCCESS;
 }
 
 int decode_input(gpiod_line_t* line)
@@ -275,7 +271,7 @@ int wait_for_input(gpiod_line_t* line, timespec_t* eventTime)
         return EXIT_FAILURE;
     }
 
-    if ((ret = gpiod_line_event_wait(line, &appTimeout)) < 0)        
+    if ((ret = gpiod_line_event_wait(line, &appTimeout)) < 0)
     {
         perror("Wait event notification failed\n");
         return EXIT_FAILURE;
@@ -301,7 +297,6 @@ int wait_for_input(gpiod_line_t* line, timespec_t* eventTime)
 
     *eventTime = event.ts; // keep record of when initial event occurred to calculate duration
     return EXIT_SUCCESS;
-
 }
 
 /*
@@ -330,7 +325,7 @@ int debounce_input_and_release_line(gpiod_line_t* line)
 
         if ((ret = gpiod_line_event_read(line, &event)) < 0) 
         {
-            perror("Read last event notification failed\n");            
+            perror("Read last event notification failed\n");
             gpiod_line_release(line);
             return EXIT_FAILURE;
         }
@@ -382,8 +377,7 @@ void process_button_event(int *prevValPtr, int newVal, timespec_t* prevTimePtr, 
 {
     // calculate duration between previous input and current input
     int duration = (int)((lastTime.tv_sec - prevTimePtr->tv_sec) * 1000 + (lastTime.tv_nsec - prevTimePtr->tv_nsec) / 1000000); 
-    //printf("%d -> %dms -> %d\n", prevVal, duration, newVal);        
-
+    //printf("%d [%dms] -> %d\n", prevVal, duration, newVal);        
     
     if (newVal == GPIO_HIGH && *prevValPtr == GPIO_LOW) // button released, duration is the duration the button kept pressed
     {
@@ -395,7 +389,6 @@ void process_button_event(int *prevValPtr, int newVal, timespec_t* prevTimePtr, 
     {
         *prevValPtr = 0;
         *prevTimePtr = lastTime;
-
         process_button_press(duration, symbols, symbolIndexPtr, letters, letterIndexPtr);
     }
     else // input did not change its value so do nothing
@@ -403,7 +396,6 @@ void process_button_event(int *prevValPtr, int newVal, timespec_t* prevTimePtr, 
         *prevTimePtr = lastTime;
         printf("[%d] Not adding anything\n\n", *symbolIndexPtr);
     }
-
 }
 
 /*
@@ -523,9 +515,8 @@ int encode_input(gpiod_line_t* line, char *input)
     for(int letterIndex=0; letterIndex < sentenceLength; letterIndex++)
     {
         if (encode_letter(line, toupper(input[letterIndex])) != EXIT_SUCCESS)
-        {
             return EXIT_FAILURE;
-        }
+        
         msleep(UNIT_MILI_SECONDS * 3); // Space between letters = 3 units
     }
     
@@ -539,9 +530,7 @@ int encode_input(gpiod_line_t* line, char *input)
 int encode_letter(gpiod_line_t* line, int letter)
 {
     if (is_valid_morse_code(letter) == false)
-    {
         return EXIT_SUCCESS;
-    }
 
     putchar(letter);
     putchar(*SPACE);
@@ -564,7 +553,6 @@ int encode_letter(gpiod_line_t* line, int letter)
 
     putchar(*SPACE);
     fflush(stdout);
-
     return EXIT_SUCCESS;
 }
 
@@ -588,7 +576,6 @@ int blinkLed(gpiod_line_t* line, char dotDash)
     }
 
     printf("Error cannot determine if dot or dash.");
-
     return EXIT_SUCCESS;
 }
 
@@ -619,14 +606,10 @@ int set_gpio_pin(gpiod_line_t* line, int miliSeconds)
  */
 bool is_valid_morse_code(int letterIndex)
 {
-    if (letterIndex >= 65 && letterIndex <= 90)
-        return true;    // Alphabet character
-
-    if (letterIndex >= 48 && letterIndex <= 57)
-        return true;    // Numeric character
-    
-    if (letterIndex == 32)
-        return true;    // Spaces
+    if ((letterIndex >= 65 && letterIndex <= 90) || // Alphabet character
+        (letterIndex >= 48 && letterIndex <= 57) || // Numeric character
+        (letterIndex == 32))                        // Space
+        return true;
     
     return false;
 }
