@@ -463,15 +463,13 @@ void process_button_press(int releaseDuration, char* symbols, int* symbolIndexPt
             letters[*letterIndexPtr] = ' ' + morseIndex; // insert corresponding letter in letters[]
         }
 
-        letters[*letterIndexPtr+1] = '\0';
-        (*letterIndexPtr)++;
+        letters[++(*letterIndexPtr)] = '\0';
         
         if (releaseDuration > SPACE_TIMEOUT) // also add a space after the letter in letters[]
         {
             printf("[%d] Adding space\n", *symbolIndexPtr);
             letters[*letterIndexPtr] = *SPACE;
-            letters[*letterIndexPtr+1] = '\0';
-            (*letterIndexPtr)++;
+            letters[++(*letterIndexPtr)] = '\0';
         }
 
         // clear symbols[]
