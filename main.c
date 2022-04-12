@@ -55,7 +55,7 @@ const char MORSE_CODE[][6] =
     ".._.",     // F
     "__.",      // G
     "....",     // H
-    "..",       // I
+    "..",       // L
     ".___",     // J
     "_._",      // K
     "._..",     // L
@@ -80,6 +80,8 @@ int display_menu(bool* MORSE_DECODE);
 int wait_for_input(struct gpiod_line* line, timespec_t* eventTime);
 int debounce_input(struct gpiod_line* line);
 int read_stable_input(struct gpiod_line* line, int* value);
+void process_button_release(int pressDuration, char* symbols, int* symbolIndex);
+void process_button_press(int releaseDuration, char* symbols, int* symbolIndex, char* letters, int* letterIndex);
 int outputMorseCodesentence(struct gpiod_line* line, char *sentence);
 int outputMorseCharacter(struct gpiod_line* line, int character);
 int blinkLed(struct gpiod_line* line, char dotDash);
@@ -124,9 +126,8 @@ int main(int argc, char **argv)
             
             timespec_t prevTime, lastTime;
             int newVal, oldVal, prevVal = GPIO_HIGH; // starting value of GPIO input
-            int morse_code_array_size = sizeof(MORSE_CODE) /  sizeof(char[6]);
-            int i = -1; // symbols index
-            int l = 0;  // letters index    
+            int symbolIndex = -1; // symbols index
+            int letterIndex = 0;  // letters index    
 
             char symbols[500] = "\0"; // will be [6] at the end
             char letters[500] = "\0";    
@@ -163,94 +164,27 @@ int main(int argc, char **argv)
 
                 if (newVal == GPIO_HIGH && prevVal == GPIO_LOW) // button released, duration is the duration the button kept pressed
                 {
-                    i++;
                     prevVal = 1;
-                    prevTime = lastTime;            
-                    printf("Button kept pressed for %dms\n", duration);
-
-                    if (duration > LONG_PRESS_TIMEOUT)                      // do nothing
-                    {
-                        i--;
-                        printf("[%d] Not adding anything\n", i);
-                    }
-                    else if (duration > SHORT_PRESS_TIMEOUT)                // add '_'
-                    {
-                        printf("[%d] Adding '_'\n", i);
-                        symbols[i] = *DASH;
-                        symbols[i+1] = '\0';
-                    }
-                    else                                                    // add '.'
-                    {
-                        printf("[%d] Adding '.'\n", i);
-                        symbols[i] = *DOT;
-                        symbols[i+1] = '\0';                    
-                    }
-                    
-                    puts("");            
+                    prevTime = lastTime;
+                    process_button_release(duration, symbols, &symbolIndex);
                 }
-                else if (newVal == GPIO_LOW && prevVal == GPIO_HIGH) // button pressed, duration is the duration the button kept depressed
+                else if (newVal == GPIO_LOW && prevVal == GPIO_HIGH) // button pressed, duration is the duration the button kept released
                 {
                     prevVal = 0;
-                    prevTime = lastTime;            
-                    printf("Button kept depressed for %dms\n", duration);
-                    
-                    if (duration > SYMBOLS_TIMEOUT && duration < APP_TIMEOUT) // long silence -> translate symbols into letter
-                    {
-                        
-                        i++;
-                        printf("[%d] Calculating symbol\n", i);
-                        
-                        // at this point a letter should be formed, check the MORSE_CODE array for it
-                        int idx;
-                        for(idx = 0; idx < sizeof(MORSE_CODE) /  sizeof(char[6]); idx++)
-                        {
-                            if (strcmp(symbols, MORSE_CODE[idx]) == 0) // idx found
-                                break;
-                        }
+                    prevTime = lastTime;
 
-                        printf("The pattern '%s' is at index %d and matches to %c\n", symbols, idx, idx+32);
-                        
-                        // insert corresponding letter in letters[]                    
-                        letters[l] = ' ' + idx;
-                        
-                        if (idx == morse_code_array_size)
-                        {
-                            letters[l] = '#';   // error in pattern
-                        }
-
-                        letters[l+1] = '\0';
-                        l++;
-                        
-                        if (duration > SPACE_TIMEOUT) // also add a space after the letter in letters[]
-                        {
-                            printf("[%d] Adding space\n", i);
-                            letters[l] = *SPACE;
-                            letters[l+1] = '\0';
-                            l++;
-                        }
-
-                        // clear symbols[]
-                        i = -1;
-                        symbols[0] = '\0';
-                    }
-                    else // short silence -> continue with reading the symbol pattern
-                    {
-                        printf("[%d] Not adding anything\n", i);
-                    }
-                    
-                    puts("");
+                    process_button_press(duration, symbols, &symbolIndex, letters, &letterIndex);
                 }
                 else // input did not change its value so do nothing
                 {
-                    printf("[%d] Not adding anything\n", i);
-                    puts("");
                     prevTime = lastTime;
+                    printf("[%d] Not adding anything\n\n", symbolIndex);
                 }
 
                 printf("Symbols: '%s' (%lu)\n", symbols, strlen(symbols));
                 printf("Letters: '%s' (%lu)\n", letters, strlen(letters));
                 
-                if (strlen(symbols) > 5) // TODO: here I should reset symbols[]
+                if (strlen(symbols) > 5) // TODO: here symbolIndex should reset symbols[]
                 {
                     printf("INPUT TOO LONG!\n\n");
                 }
@@ -351,7 +285,7 @@ int display_menu(bool* MORSE_DECODE)
 }
 
 /*
- * Wait for an event to happen on the line
+ * Wait for an event to occur on the given line and store the time of the event in EVENTTIME
  */
 int wait_for_input(struct gpiod_line* line, timespec_t* eventTime)
 {
@@ -385,7 +319,7 @@ int wait_for_input(struct gpiod_line* line, timespec_t* eventTime)
 
     /* informative code */
     // puts("");
-    // printf("INITIAL event notification on line #%u %d times\n", line_num, i);
+    // printf("INITIAL event notification on line #%u %d times\n", line_num, symbolIndex);
     // printf("Event type: %d\n", event.event_type);
     // printf("Event time: %lo sec %lo nsec\n", event.ts.tv_sec, event.ts.tv_nsec);
     // puts("");
@@ -396,7 +330,7 @@ int wait_for_input(struct gpiod_line* line, timespec_t* eventTime)
 }
 
 /*
- * Debounce the events on the line
+ * Debounce the bouncing events on the given line
  */
 int debounce_input(struct gpiod_line* line)
 {
@@ -412,7 +346,7 @@ int debounce_input(struct gpiod_line* line)
             perror("Wait event notification failed\n");            
             return EXIT_FAILURE;
         }
-        else if (ret == 0) // timeout, i.e. bouncing ended - exit loop
+        else if (ret == 0) // timeout, symbolIndex.e. bouncing ended - exit loop
         {
             gpiod_line_release(line);
             return EXIT_SUCCESS;
@@ -426,7 +360,7 @@ int debounce_input(struct gpiod_line* line)
         
         /* informative code */            
         //puts("");
-        //printf("BOUNCE event notification on line #%u %d times\n", line_num, i);
+        //printf("BOUNCE event notification on line #%u %d times\n", line_num, symbolIndex);
         //printf("Event type: %d\n", event.event_type);
         //printf("Event time: %lo sec %lo nsec\n", event.ts.tv_sec, event.ts.tv_nsec);
         //puts("");
@@ -434,7 +368,7 @@ int debounce_input(struct gpiod_line* line)
 }
 
 /*
- * Read stable input from line
+ * Read stable input value from the given line and store it in VALUE
  */
 int read_stable_input(struct gpiod_line* line, int* value)
 {
@@ -463,14 +397,98 @@ int read_stable_input(struct gpiod_line* line, int* value)
 }
 
 /*
+ * Process what happens when the button is released based on the press duration
+ */
+void process_button_release(int pressDuration, char* symbols, int* symbolIndex)
+{
+    (*symbolIndex)++;
+    
+    printf("Button kept pressed for %dms\n", pressDuration);
+
+    if (pressDuration > LONG_PRESS_TIMEOUT)                      // do nothing
+    {
+        (*symbolIndex)--;
+        printf("[%d] Not adding anything\n", *symbolIndex);
+    }
+    else if (pressDuration > SHORT_PRESS_TIMEOUT)                // add '_'
+    {
+        printf("[%d] Adding '_'\n", *symbolIndex);
+        symbols[*symbolIndex] = *DASH;
+        symbols[*symbolIndex+1] = '\0';
+    }
+    else                                                        // add '.'
+    {
+        printf("[%d] Adding '.'\n", *symbolIndex);
+        symbols[*symbolIndex] = *DOT;
+        symbols[*symbolIndex+1] = '\0';
+    }
+    
+    puts("");
+}
+
+/*
+ * Process what happens when the button is pressed based on the release duration and current pattern in symbols[]
+ */
+void process_button_press(int releaseDuration, char* symbols, int* symbolIndex, char* letters, int* letterIndex)
+{
+    printf("Button kept released for %dms\n", releaseDuration);
+                    
+    if (releaseDuration < SYMBOLS_TIMEOUT) // short release -> continue reading the symbol pattern
+    {
+        // printf("[%d] Not adding anything\n", *symbolIndex);
+    }
+    else // long release -> try to translate symbols into letter
+    {
+        (*symbolIndex)++;
+        printf("[%d] Calculating symbol\n", *symbolIndex);
+        
+        // check if symbols[] forms a morse pattern
+        int morseIndex;
+        for(morseIndex = 0; morseIndex < sizeof(MORSE_CODE) /  sizeof(char[6]); morseIndex++)
+        {
+            if (strcmp(symbols, MORSE_CODE[morseIndex]) == 0) // morseIndex found
+                break;
+        }
+        
+        if (morseIndex == sizeof(MORSE_CODE) /  sizeof(char[6])) // if last element of the array
+        {
+            printf("The pattern '%s' is not a valid morse code!\n", symbols);
+            letters[*letterIndex] = '#';   // error in pattern
+        }
+        else
+        {
+            printf("The pattern '%s' is at index %d and matches to %c\n", symbols, morseIndex, morseIndex+32);
+            letters[*letterIndex] = ' ' + morseIndex; // insert corresponding letter in letters[]
+        }
+
+        letters[*letterIndex+1] = '\0';
+        (*letterIndex)++;
+        
+        if (releaseDuration > SPACE_TIMEOUT) // also add a space after the letter in letters[]
+        {
+            printf("[%d] Adding space\n", *symbolIndex);
+            letters[*letterIndex] = *SPACE;
+            letters[*letterIndex+1] = '\0';
+            letterIndex++;
+        }
+
+        // clear symbols[]
+        *symbolIndex = -1;
+        symbols[0] = '\0';
+    }
+    
+    puts("");
+}
+
+/*
  * Output a morse code sentence
  */
 int outputMorseCodesentence(struct gpiod_line* line, char *sentence)
 {
     int sentenceLength = strlen(sentence);
-    for(int charIndex=0; charIndex < sentenceLength; charIndex++)
+    for(int letterIndex=0; letterIndex < sentenceLength; letterIndex++)
     {
-        if (outputMorseCharacter(line, toupper(sentence[charIndex])) != EXIT_SUCCESS)
+        if (outputMorseCharacter(line, toupper(sentence[letterIndex])) != EXIT_SUCCESS)
         {
             return EXIT_FAILURE;
         }
@@ -495,15 +513,15 @@ int outputMorseCharacter(struct gpiod_line* line, int character)
 
     int morseIndex = character - 32;
     int morseCodeLength = strlen(MORSE_CODE[morseIndex]);
-    for(int charIndex=0; charIndex<morseCodeLength; charIndex++)
+    for(int letterIndex=0; letterIndex<morseCodeLength; letterIndex++)
     {
-        if (MORSE_CODE[morseIndex][charIndex] == *SPACE)
+        if (MORSE_CODE[morseIndex][letterIndex] == *SPACE)
         {
             msleep(UNIT_MILI_SECONDS * 7); // Space between words = 7 units
             continue;
         }
 
-        if (blinkLed(line, MORSE_CODE[morseIndex][charIndex]) != EXIT_SUCCESS)
+        if (blinkLed(line, MORSE_CODE[morseIndex][letterIndex]) != EXIT_SUCCESS)
         {
             return EXIT_FAILURE;
         }
@@ -568,19 +586,19 @@ int setGPIOPin(struct gpiod_line* line, int miliSeconds)
 /*
  * Validate if we support the entered character
  */
-bool isValidMorseCodeCharacter(int charIndex)
+bool isValidMorseCodeCharacter(int letterIndex)
 {
-    if (charIndex >= 65 && charIndex <= 90)
+    if (letterIndex >= 65 && letterIndex <= 90)
     {
         return true;    // Alphabet character
     }
 
-    if (charIndex >= 48 && charIndex <= 57)
+    if (letterIndex >= 48 && letterIndex <= 57)
     {
         return true;    // Numeric character
     }
 
-    if (charIndex == 32)
+    if (letterIndex == 32)
     {
         return true;    // Spaces
     }
