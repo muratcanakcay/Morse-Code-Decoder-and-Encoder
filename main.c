@@ -80,12 +80,14 @@ const char MORSE_CODE[][6] =
 };
 
 int display_menu(bool* MORSE_DECODE);
+int decode_input(gpiod_line_t* line);
 int wait_for_input(gpiod_line_t* line, timespec_t* eventTime);
 int debounce_input_and_release_line(gpiod_line_t* line);
 int read_stable_input_and_release_line(gpiod_line_t* line, int* value);
 void process_button_event(int* prevValPtr, int newVal, timespec_t* prevTimePtr, timespec_t lastTime, char* symbols, int* symbolIndexPtr, char* letters, int* letterIndexPtr);
 void process_button_release(int pressDuration, char* symbols, int* symbolIndexPtr);
 void process_button_press(int releaseDuration, char* symbols, int* symbolIndexPtr, char* letters, int* letterIndexPtr);
+int get_user_input(char** input);
 int encode_input(gpiod_line_t* line, char *sentence);
 int encode_letter(gpiod_line_t* line, int character);
 int blinkLed(gpiod_line_t* line, char dotDash);
@@ -127,64 +129,17 @@ int main(int argc, char **argv)
             {
                 perror("Get line failed\n");
                 close_chip_and_exit(chip, EXIT_FAILURE);
-            }            
-            
-            timespec_t prevTime, lastTime;
-            int newVal, oldVal, prevVal = GPIO_HIGH; // starting value of GPIO input
-            int symbolIndex = -1; // symbols index
-            int letterIndex = 0;  // letters index    
+            }
 
-            char symbols[500] = "\0"; // will be [6] at the end
-            char letters[500] = "\0";    
-            
-            // DECODE loop
-            while (true)
-            {
-                if ((ret = wait_for_input(line, &lastTime)) != EXIT_SUCCESS)
-                {
-                    if (ret == EXIT_FAILURE)
-                    {
-                        release_line_and_exit(chip, line, EXIT_FAILURE);
-                    }                
-                    else if (ret == 2)
-                    {
-                        gpiod_line_release(line);
-                        break; // return to menu
-                    }
-                }
-                
-                if (debounce_input_and_release_line(line) != EXIT_SUCCESS)
-                { 
-                    close_chip_and_exit(chip,EXIT_FAILURE);
-                }
+            puts("You can start entering your morse code using the button.");
 
-                if (read_stable_input_and_release_line(line, &newVal) != EXIT_SUCCESS)
-                { 
-                    close_chip_and_exit(chip,EXIT_FAILURE);
-                }
-                
-                process_button_event(&prevVal, newVal, &prevTime, lastTime, symbols, \
-                                    &symbolIndex, letters, &letterIndex);
-                
-                // print the new state of the symbols and the letters
-                printf("Symbols: '%s' (%lu)\n", symbols, strlen(symbols));
-                printf("Letters: '%s' (%lu)\n", letters, strlen(letters));
-                
-                
-                if (strlen(symbols) > 5) // TODO: here symbolIndex should reset symbols[]
-                {
-                    printf("INPUT TOO LONG!\n\n");
-                }
-            } // end DECODE loop
+            if (decode_input(line) != EXIT_SUCCESS)
+                release_line_and_exit(chip, line, EXIT_FAILURE);
         }        
-        else
+        else // MORSE_ENCODE
         {
             UINT line_num = LED_GPIO;
             
-            char *input = NULL;
-            size_t zero = 0;
-            ssize_t read = 0;
-
             if ((line = gpiod_chip_get_line(chip, line_num)) == NULL) 
             {
                 perror("Get line failed\n");
@@ -197,30 +152,17 @@ int main(int argc, char **argv)
                 release_line_and_exit(chip, line, EXIT_FAILURE);
             }
             
-            while (true) 
-            {
-                puts("Enter a your input (q to finish):");
-                if ((read = getline(&input, &zero, stdin)) == -1)
-                {
-                    break; 
-                }
-                if (strlen(input) == 2 && input[0] == 'q')
-                {
-                    break;
-                }
+            char* input = NULL;
+            if ((ret = get_user_input(&input)) != EXIT_SUCCESS)
+                release_line_and_exit(chip, line, EXIT_FAILURE);
 
-                input[read-1] = '\0';
-                printf("You entered = '%s'\n", input);
-                printf("Input length = %zu\n", strlen(input));
-
-                encode_input(line, input);            
-
-                puts("");
-            }
-            
+            if (encode_input(line, input) != EXIT_SUCCESS)
+                release_line_and_exit(chip, line, EXIT_FAILURE);
+                     
             free(input);
+            gpiod_line_release(line);
         }
-    }
+    } // end of main loop
 }
 
 
@@ -243,30 +185,78 @@ void msleep(UINT miliSeconds)
 int display_menu(bool* MORSE_DECODE) 
 {
     char *input = NULL;
-        size_t zero = 0;
-        ssize_t read = 0;
+    size_t zero = 0;
+    ssize_t read = 0;
 
-        puts("Enter:\n\
-        1 for DECODING a message entered by buttons to letters\n\
-        2 for ENCODING a message entered by keyboard using LEDs\n\
-        Anything else to QUIT.");
+    puts("Enter:\n\
+    1 for DECODING a message entered by buttons to letters\n\
+    2 for ENCODING a message entered by keyboard using LEDs\n\
+    Anything else to QUIT.\n");
+    putchar('>');
 
-        if ((read = getline(&input, &zero, stdin)) < 0) {            
-            perror("getline");
+    if ((read = getline(&input, &zero, stdin)) < 0) {            
+        perror("getline");
+        return EXIT_FAILURE;
+    }
+
+    if(input[0] == '1') {
+        *MORSE_DECODE = true;
+        free(input);
+        return EXIT_SUCCESS;
+    }
+    else if (input[0] == '2') {
+        *MORSE_DECODE = false;
+        free(input);
+        return EXIT_SUCCESS;
+    }
+    else {
+        free(input);
+        return 2;
+    }
+}
+
+int decode_input(gpiod_line_t* line)
+{
+    timespec_t prevTime, lastTime;
+    int newVal, oldVal, prevVal = GPIO_HIGH; // starting value of GPIO input
+    int symbolIndex = -1; // symbols index
+    int letterIndex = 0;  // letters index
+    int ret;    
+
+    char symbols[500] = "\0"; // will be [6] at the end
+    char letters[500] = "\0";    
+    
+    // DECODE loop
+    while (true)
+    {
+        if ((ret = wait_for_input(line, &lastTime)) != EXIT_SUCCESS)
+        {
+            if (ret == EXIT_FAILURE) 
+                return EXIT_FAILURE;
+            else
+            {
+                gpiod_line_release(line);
+                return EXIT_SUCCESS; // return to menu
+            }
+        }
+        
+        if (debounce_input_and_release_line(line) != EXIT_SUCCESS) 
             return EXIT_FAILURE;
+        if (read_stable_input_and_release_line(line, &newVal) != EXIT_SUCCESS) 
+            return EXIT_FAILURE;
+        
+        process_button_event(&prevVal, newVal, &prevTime, lastTime, symbols, \
+                            &symbolIndex, letters, &letterIndex);
+        
+        // print the new state of the symbols and the letters
+        printf("Symbols: '%s' (%lu)\n", symbols, strlen(symbols));
+        printf("Letters: '%s' (%lu)\n", letters, strlen(letters));        
+        
+        if (strlen(symbols) > 5) // TODO: here symbolIndex should reset symbols[]
+        {
+            printf("INPUT TOO LONG!\n\n");
         }
-
-        if(input[0] == '1') {
-            *MORSE_DECODE = true;
-            return EXIT_SUCCESS;
-        }
-        else if (input[0] == '2') {
-            *MORSE_DECODE = false;
-            return EXIT_SUCCESS;
-        }
-        else {
-            return 2;
-        }
+    } // end DECODE loop
 }
 
 /*
@@ -355,7 +345,8 @@ int debounce_input_and_release_line(gpiod_line_t* line)
 }
 
 /*
- * Read stable input value from the given line and store it in VALUE
+ * Read stable input value from the given line and store it in VALUE.
+ * Releases the line on EXIT_SUCCESS, does not release on EXIT_FAILURE
  */
 int read_stable_input_and_release_line(gpiod_line_t* line, int* value)
 {
@@ -452,7 +443,7 @@ void process_button_press(int releaseDuration, char* symbols, int* symbolIndexPt
 {
     printf("Button kept released for %dms\n", releaseDuration);
                     
-    if (releaseDuration < SYMBOLS_TIMEOUT) // short release -> continue reading the symbol pattern
+    if (releaseDuration < SYMBOLS_TIMEOUT || releaseDuration > APP_TIMEOUT) // short release -> continue reading the symbol pattern
     {
         // printf("[%d] Not adding anything\n", *symbolIndex);
     }
@@ -500,37 +491,62 @@ void process_button_press(int releaseDuration, char* symbols, int* symbolIndexPt
 }
 
 /*
+ * Get text user input from terminal for encoding
+ */
+int get_user_input(char** input)
+{
+    size_t zero = 0;
+    ssize_t read = 0;
+
+    puts("Enter a text to be encoded into morse code:");
+    putchar('>');
+
+    if ((read = getline(input, &zero, stdin)) == -1)
+    {
+        perror("getline() failed in get_user_input()");
+        return EXIT_FAILURE;
+    }
+
+    (*input)[read-1] = '\0';
+    printf("You entered = '%s'\n", *input);
+    printf("Input length = %zu\n", strlen(*input));
+
+    return EXIT_SUCCESS;
+}
+
+/*
  * Output a morse code sentence
  */
-int encode_input(gpiod_line_t* line, char *sentence)
+int encode_input(gpiod_line_t* line, char *input)
 {
-    int sentenceLength = strlen(sentence);
+    int sentenceLength = strlen(input);
     for(int letterIndex=0; letterIndex < sentenceLength; letterIndex++)
     {
-        if (encode_letter(line, toupper(sentence[letterIndex])) != EXIT_SUCCESS)
+        if (encode_letter(line, toupper(input[letterIndex])) != EXIT_SUCCESS)
         {
             return EXIT_FAILURE;
         }
         msleep(UNIT_MILI_SECONDS * 3); // Space between letters = 3 units
     }
-
+    
+    puts("");
     return EXIT_SUCCESS;
 }
 
 /*
  * Output a morse code character
  */
-int encode_letter(gpiod_line_t* line, int character)
+int encode_letter(gpiod_line_t* line, int letter)
 {
-    if (is_valid_morse_code(character) == false)
+    if (is_valid_morse_code(letter) == false)
     {
         return EXIT_SUCCESS;
     }
 
-    putchar(character);
+    putchar(letter);
     putchar(*SPACE);
 
-    int morseIndex = character - 32;
+    int morseIndex = letter - 32;
     int morseCodeLength = strlen(MORSE_CODE[morseIndex]);
     for(int letterIndex=0; letterIndex<morseCodeLength; letterIndex++)
     {
@@ -541,10 +557,8 @@ int encode_letter(gpiod_line_t* line, int character)
         }
 
         if (blinkLed(line, MORSE_CODE[morseIndex][letterIndex]) != EXIT_SUCCESS)
-        {
             return EXIT_FAILURE;
-        }
-
+        
         msleep(UNIT_MILI_SECONDS); // Space between parts of same letters = 1 unit
     }
 
@@ -575,7 +589,7 @@ int blinkLed(gpiod_line_t* line, char dotDash)
 
     printf("Error cannot determine if dot or dash.");
 
-    return EXIT_FAILURE;
+    return EXIT_SUCCESS;
 }
 
 /*
@@ -583,9 +597,7 @@ int blinkLed(gpiod_line_t* line, char dotDash)
  */
 int set_gpio_pin(gpiod_line_t* line, int miliSeconds)
 {
-    int ret;
-
-    if ((ret = gpiod_line_set_value(line, GPIO_HIGH))  < 0) 
+    if (gpiod_line_set_value(line, GPIO_HIGH)  < 0) 
     {
         perror("Set line output high failed\n");
         return EXIT_FAILURE;
@@ -593,7 +605,7 @@ int set_gpio_pin(gpiod_line_t* line, int miliSeconds)
 
     msleep(miliSeconds);
 
-    if ((ret = gpiod_line_set_value(line, GPIO_LOW))  < 0) 
+    if (gpiod_line_set_value(line, GPIO_LOW)  < 0) 
     {
         perror("Set line output low failed\n");
         return EXIT_FAILURE;
@@ -608,20 +620,14 @@ int set_gpio_pin(gpiod_line_t* line, int miliSeconds)
 bool is_valid_morse_code(int letterIndex)
 {
     if (letterIndex >= 65 && letterIndex <= 90)
-    {
         return true;    // Alphabet character
-    }
 
     if (letterIndex >= 48 && letterIndex <= 57)
-    {
         return true;    // Numeric character
-    }
-
+    
     if (letterIndex == 32)
-    {
         return true;    // Spaces
-    }
-
+    
     return false;
 }
 
