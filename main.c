@@ -98,13 +98,8 @@ void release_line_and_exit(gpiod_chip_t* chip, gpiod_line_t* line, int status);
 
 int main(int argc, char **argv) 
 {
-    char* chipname = "gpiochip0";
-    gpiod_line_event_t event;
     gpiod_chip_t *chip;
-    gpiod_line_t *line;
-    int ret;
-    bool MORSE_DECODE = true;    
-
+    char* chipname = "gpiochip0";
     if ((chip = gpiod_chip_open_by_name(chipname)) == NULL)
     {
         perror("Open chip failed\n");        
@@ -114,16 +109,19 @@ int main(int argc, char **argv)
     // main loop
     while(true)
     {
+        int ret;
+        bool MORSE_DECODE = true;
         if ((ret = display_menu(&MORSE_DECODE)) != EXIT_SUCCESS )
         {
             if (ret == EXIT_FAILURE) close_chip_and_exit(chip, EXIT_FAILURE);
             else close_chip_and_exit(chip, EXIT_SUCCESS);
         }
-
+        
+        gpiod_line_event_t event;
+        gpiod_line_t *line;
         if (MORSE_DECODE)
         {        
             UINT line_num = BUTTON_GPIO;
-
             if ((line = gpiod_chip_get_line(chip, line_num)) == NULL)
             {
                 perror("Get line failed\n");
@@ -137,8 +135,7 @@ int main(int argc, char **argv)
         }        
         else // MORSE_ENCODE
         {
-            UINT line_num = LED_GPIO;
-            
+            UINT line_num = LED_GPIO;            
             if ((line = gpiod_chip_get_line(chip, line_num)) == NULL) 
             {
                 perror("Get line failed\n");
