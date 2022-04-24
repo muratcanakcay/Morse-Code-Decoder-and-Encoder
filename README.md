@@ -1,5 +1,5 @@
 # Morse-Code-Decoder-and-Encoder
-A simple morse-code decoder/encoder project I wrote for the 5th-semester Linux for Embedded Systems course at Computer Science program at Warsaw University of
+A simple morse-code decoder/encoder project I wrote for the 6th-semester Linux for Embedded Systems course at Computer Science program at Warsaw University of
 Technology. It was written to be used on Rasberry Pi 4B using `libgpiod` library, developed on a QEMU emulated aarch64 linux kernel built with BuildRoot and tested  
 on a real RPi4B. There's still room for improvement but overall it works.
 
